@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flight Select — Drone imagery review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./overrides.css" />
+    <link rel="stylesheet" href="./copy-status.css" />
+    <link rel="stylesheet" href="./thumbnails.css" />
+    <link rel="stylesheet" href="./desktop.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">↗</span><span>FLIGHT SELECT</span></div>
+        <div class="header-status"><span class="pulse"></span> Local-only processing</div>
+        <button id="helpBtn" class="icon-button" title="Workflow help">?</button>
+      </header>
+      <section class="workspace">
+        <aside class="panel left-panel">
+          <div class="section-label">Mission data</div>
+          <label class="dropzone" id="dropzone" for="imageInput">
+            <input id="imageInput" type="file" accept="image/jpeg,.jpg,.jpeg" multiple />
+            <span class="upload-icon">＋</span><strong>Import image set</strong>
+            <small>Choose JPGs, or add survey folders below. Files never leave this device.</small>
+          </label>
+          <div id="desktopImport" class="desktop-import" hidden>
+            <button id="nativeFolders" class="native-button">Add survey folders</button>
+            <button id="nativeFiles" class="native-button secondary">Add JPEG files</button>
+            <p>Choose multiple folders in one Windows dialog. Their contents are scanned locally.</p>
+          </div>
+          <label class="folder-button" for="folderInput">Add a survey folder <span>⌁</span><input id="folderInput" type="file" accept="image/jpeg,.jpg,.jpeg" webkitdirectory directory /></label>
+          <p class="folder-hint">Choose a folder, then use this again to add another—each selection is merged. For one-step import, drag several selected folders from File Explorer onto the import area.</p>
+          <div class="auto-card"><strong>Guided match review</strong><small>Import every folder together or in batches. Draw around a review area, then choose whether the oldest or newest matched captures should be selected for removal.</small></div>
+          <button id="clearBtn" class="quiet-button">Clear all data</button>
+          <div class="rule"></div>
+          <div class="section-label">Review</div>
+          <div class="metric-grid">
+            <div class="metric"><span id="totalCount">0</span><small>Geotagged images</small></div>
+            <div class="metric warn"><span id="repeatCount">0</span><small>Possible repeats</small></div>
+          </div>
+          <label class="field-label">Repeat radius <output id="radiusOut">12 m</output></label>
+          <input id="radius" type="range" min="2" max="60" value="12" />
+          <label class="field-label">Minimum time gap <output id="lagOut">10 min</output></label>
+          <input id="timeLag" type="range" min="1" max="120" value="10" />
+          <p class="hint">A candidate requires a close location and a later capture separated by at least this gap. Select the oldest or newest member of each selected match group when ready.</p>
+          <div class="rule"></div>
+          <div class="section-label row"><span>Image list</span><button id="showSelected" class="text-button">Show selected</button></div>
+          <div id="imageList" class="image-list"><p class="empty-list">Import geotagged JPGs to begin.</p></div>
+        </aside>
+        <section class="map-area">
+          <div id="map"></div>
+          <div class="map-title"><span>GEOGRAPHIC REVIEW</span><small>Draw a shape to select photos</small></div>
+          <div class="map-legend">
+            <span><i class="dot original"></i> Original</span><span><i class="dot refly"></i> Re-flight</span><span><i class="dot repeat"></i> Repeat candidate</span><span><i class="dot selected"></i> Selected</span>
+          </div>
+          <div class="map-actions">
+            <button id="selectOldest" class="map-button">Select oldest in matches</button>
+            <button id="selectNewest" class="map-button">Select newest in matches</button>
+            <button id="keepSelected" class="map-button">Keep selected</button>
+            <button id="removeSelected" class="map-button danger">Exclude selected</button>
+          </div>
+        </section>
+        <aside class="panel right-panel">
+          <div class="section-label">Export queue</div>
+          <h1 id="queueCount">0 images</h1>
+          <p class="export-copy">The final, non-excluded image selection. Later, overlapping captures are preserved; matched earlier captures can be excluded with a single click.</p>
+          <div class="queue-bars"><div><span>Original survey</span><b id="originalKeep">0</b></div><div><span>Re-flight</span><b id="reflyKeep">0</b></div></div>
+          <button id="excludeRepeats" class="primary-button">Exclude all selected candidates</button>
+          <div class="rule"></div>
+          <div class="section-label">Deliver</div>
+          <button id="copyFolder" class="export-button">Copy selected to folder <span>↗</span></button>
+          <p id="copyStatus" class="copy-status" aria-live="polite"></p>
+          <button id="exportManifest" class="quiet-button wide">Download CSV manifest</button>
+          <p class="hint">Copies are written to a folder you choose; the source images are never altered.</p>
+        </aside>
+      </section>
+    </main>
+    <dialog id="helpDialog"><button class="close-dialog">×</button><h2>Review a survey in three moves</h2><ol><li>Import survey and re-flight folders in any order.</li><li>Use the rectangle or polygon tools to select a review area. Choose <em>Select oldest in matches</em> or <em>Select newest in matches</em> to choose which side of each match to remove.</li><li>Choose <em>Exclude selected</em>, then copy the final list to a folder or download a CSV. Nothing is deleted from your source drive.</li></ol></dialog>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

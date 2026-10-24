@@ -1,0 +1,11 @@
+# Dependencies and generated application bundles
+node_modules/
+release/
+
+# Local hosting metadata from the earlier static-site prototype
+.openai/
+
+# OS/editor clutter
+.DS_Store
+Thumbs.db
+*.log
