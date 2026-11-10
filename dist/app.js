@@ -44,7 +44,7 @@ async function ingest(files) {
   dz.querySelector('strong').textContent = `Reading ${files.length} image${files.length === 1 ? '' : 's'}…`;
   const results = await Promise.all(files.map(async file => ({ file, gps: await readGPS(file) })));
   let found = 0;
-  results.forEach(({file,gps}) => { if (!gps) return; found++; state.images.push({ id: crypto.randomUUID(), file, name:file.name, sourcePath:file._sourcePath || '', relativePath:file._relativePath || file.webkitRelativePath || file.name, lat:gps.lat, lng:gps.lng, capturedAt:gps.capturedAt, capturedMs:exifTimeMs(gps.capturedAt), dataset:'unclassified', excluded:false, repeat:false }); });
+  results.forEach(({file,gps}) => { if (!gps) { if(file._thumbnailUrl)URL.revokeObjectURL(file._thumbnailUrl); return; } found++; state.images.push({ id: crypto.randomUUID(), file:file._metadataOnly?null:file, thumbnailUrl:file._thumbnailUrl||'', name:file.name, sourcePath:file._sourcePath || '', relativePath:file._relativePath || file.webkitRelativePath || file.name, lat:gps.lat, lng:gps.lng, capturedAt:gps.capturedAt, capturedMs:exifTimeMs(gps.capturedAt), dataset:'unclassified', excluded:false, repeat:false }); });
   dz.querySelector('strong').textContent = found ? `${found} geotagged image${found===1?'':'s'} added` : 'No EXIF GPS found';
   setTimeout(()=>dz.querySelector('strong').textContent='Import image set', 1800);
   if (state.images.length) map.fitBounds(L.latLngBounds(state.images.map(x=>[x.lat,x.lng])).pad(.15));
@@ -54,9 +54,12 @@ async function importFromDesktop(type) {
   const picker=type==='folders' ? window.flightSelectDesktop.pickFolders : window.flightSelectDesktop.pickFiles;
   const entries=await picker(); if(!entries.length)return;
   dz.querySelector('strong').textContent=`Reading ${entries.length} image${entries.length===1?'':'s'}…`;
-  const loaded=await window.flightSelectDesktop.readImages(entries);
-  const files=loaded.map(entry=>{const file=new File([entry.bytes],entry.name,{type:'image/jpeg'});file._sourcePath=entry.path;file._relativePath=entry.relativePath;return file;});
-  await ingest(files);
+  const batchSize=24;
+  for(let start=0;start<entries.length;start+=batchSize){
+    const loaded=await window.flightSelectDesktop.readImages(entries.slice(start,start+batchSize));
+    const files=loaded.map(entry=>{const file=new File([entry.bytes],entry.name,{type:'image/jpeg'});file._sourcePath=entry.path;file._relativePath=entry.relativePath;file._metadataOnly=true;file._thumbnailUrl=entry.thumbnail?URL.createObjectURL(new Blob([entry.thumbnail],{type:'image/jpeg'})):'';return file;});
+    await ingest(files);
+  }
 }
 
 function findRepeats() {
@@ -112,6 +115,7 @@ function labelFor(img) { return img.dataset==='refly' ? 'Later replacement' : im
 function tooltipContent(img, thumbnailUrl='') { return `<div class="thumb-card">${thumbnailUrl?`<img src="${thumbnailUrl}" alt="Preview of ${safe(img.name)}">`:'<div class="thumb-placeholder">Loading preview…</div>'}<div class="thumb-meta"><b>${safe(img.name)}</b><span>${img.capturedAt||'No capture time'}</span><span>${img.lat.toFixed(6)}, ${img.lng.toFixed(6)}</span></div></div>`; }
 async function thumbnailFor(img) {
   if(img.thumbnailUrl)return img.thumbnailUrl;
+  if(!img.file)return '';
   try {
     const bitmap=await createImageBitmap(img.file), scale=Math.min(240/bitmap.width,160/bitmap.height,1), canvas=document.createElement('canvas');
     canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));

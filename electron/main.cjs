@@ -1,8 +1,12 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const imagePattern = /\.(jpe?g)$/i;
+// GPS EXIF lives in the JPEG header.  Do not load whole camera originals merely
+// to read that metadata: large folder imports otherwise retain every image in
+// both the main and renderer processes at once.
+const EXIF_READ_LIMIT = 128 * 1024;
 let mainWindow;
 
 function createWindow() {
@@ -38,7 +42,24 @@ ipcMain.handle('flight:pick-files', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Select drone photos', properties: ['openFile', 'multiSelections'], filters: [{ name: 'JPEG images', extensions: ['jpg', 'jpeg'] }] });
   return canceled ? [] : filePaths.map(filePath => ({ path: filePath, name: path.basename(filePath), relativePath: path.basename(filePath) }));
 });
-ipcMain.handle('flight:read-images', async (_event, images) => Promise.all(images.map(async image => ({ ...image, bytes: await fs.readFile(image.path) }))));
+ipcMain.handle('flight:read-images', async (_event, images) => {
+  if (!Array.isArray(images)) throw new Error('Expected an array of images.');
+  const output = [];
+  for (const image of images) {
+    const handle = await fs.open(image.path, 'r');
+    try {
+      const { size } = await handle.stat();
+      const bytes = Buffer.alloc(Math.min(size, EXIF_READ_LIMIT));
+      await handle.read(bytes, 0, bytes.length, 0);
+      const preview = nativeImage.createFromPath(image.path);
+      const thumbnail = preview.isEmpty() ? null : preview.resize({ width: 240, height: 160, quality: 'good' }).toJPEG(75);
+      output.push({ ...image, bytes, thumbnail });
+    } finally {
+      await handle.close();
+    }
+  }
+  return output;
+});
 ipcMain.handle('flight:choose-output', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Choose folder for copied images', buttonLabel: 'Copy here', properties: ['openDirectory', 'createDirectory'] });
   return canceled ? null : filePaths[0];
